@@ -1,7 +1,7 @@
 from crewai import Agent, Task, Crew, Process
+from crewai_tools import ScrapeWebsiteTool
 
-from langchain_community.tools.ddg_search import DuckDuckGoSearchRun
-from langchain_community.llms.ollama import Ollama
+from langchain_community.llms.openai import OpenAI
 from langchain_core.tools import ToolException
 
 
@@ -13,22 +13,17 @@ def _handle_error(error: ToolException) -> str:
     )
 
 
-llm_llama3 = Ollama(
-    model="llama3",
-    base_url="http://localhost:11434"
-)
+llm_openai = OpenAI(model="gpt-4o-2024-05-13")
 
-
-web_site_search_tool = DuckDuckGoSearchRun()
-
+web_site_scrape_tool = ScrapeWebsiteTool()
 
 hw_expert = Agent(
-    llm=llm_llama3,
-    role='Raspberry Pi Zero W hardware expert',
-    goal='Scrape the web page and provide documentation details in {topic}',
+    llm=llm_openai,
+    role="Raspberry Pi Zero W hardware expert",
+    goal="Scrape the web page and provide documentation details in {topic}",
     verbose=True,
     memory=False,
-    tools=[web_site_search_tool],
+    tools=[web_site_scrape_tool],
     allow_delegation=False,
     backstory=(
         "As an AI expert on the Raspberry Pi Zero W, recommend the best way to connect and configure multiple sensors"
@@ -39,14 +34,13 @@ hw_expert = Agent(
     max_rpm=3
 )
 
-
 web_developer = Agent(
-    llm=llm_llama3,
-    role='Python web application developer',
-    goal='Develop Python based web application regarding {topic}',
+    llm=llm_openai,
+    role="Python web application developer",
+    goal="Develop Python based web application regarding {topic}",
     verbose=True,
     memory=False,
-    tools=[web_site_search_tool],
+    tools=[web_site_scrape_tool],
     allow_delegation=False,
     backstory=(
         "You are a highly capable Python developer assistant."
@@ -58,14 +52,13 @@ web_developer = Agent(
     )
 )
 
-
 refactor_expert = Agent(
-    llm=llm_llama3,
-    role='Refactoring expert',
-    goal='Review Python code and suggest ways to improve its readability, efficiency, and maintainability.',
+    llm=llm_openai,
+    role="Refactoring expert",
+    goal="Review Python code and suggest ways to improve its readability, efficiency, and maintainability.",
     verbose=True,
     memory=False,
-    tools=[web_site_search_tool],
+    tools=[web_site_scrape_tool],
     allow_delegation=False,
     backstory=(
         "You are an AI-powered Python refactoring expert."
@@ -76,17 +69,18 @@ refactor_expert = Agent(
         " You will provide detailed explanations for your recommendations"
         " and work collaboratively with me to implement the changes."
         " Your goal is to help me write cleaner, more robust Python code."
+        " You have an option to scrape web pages related to Python code concepts, coding conventions"
+        " and design patterns in order to provide detailed explanations for your recommendations."
     )
 )
 
-
 sw_tester = Agent(
-    llm=llm_llama3,
-    role='Expert in software testing using pytest',
-    goal='Guide through a test-driven development (TDD) workflow for implementing a new feature in a Python project.',
+    llm=llm_openai,
+    role="Expert in software testing using pytest",
+    goal="Guide through a test-driven development (TDD) workflow for implementing a new feature in a Python project.",
     verbose=True,
     memory=False,
-    tools=[web_site_search_tool],
+    tools=[web_site_scrape_tool],
     allow_delegation=False,
     backstory=(
         """You are an expert in software testing using pytest.
@@ -98,20 +92,19 @@ sw_tester = Agent(
         - Implement the feature in the production code.
         - Run the tests again, which should now pass.
         - Refactor the code if necessary to improve its quality and maintainability.
-        - Provide the complete test code and production code for the feature."
+        - Provide the complete test code and production code for the feature.
+        - Scrape web pages related to Python code concepts, coding conventions and design patterns to improve code quality."
         """
     )
 )
 
-
 hw_expert_task = Task(
     description="Focus on hardware description of connecting external devices regarding {topic}.",
-    expected_output='Short description of hardware connections.',
-    tools=[web_site_search_tool],
+    expected_output="Short description of hardware connections.",
+    tools=[web_site_scrape_tool],
     agent=hw_expert,
     async_execution=False,
 )
-
 
 web_developer_task = Task(
     description=(
@@ -119,18 +112,17 @@ web_developer_task = Task(
         "Focus on getting data from hardware and displaying graph on web page."
     ),
     expected_output=(
-        'Generate classes on {topic} that could be used to eventually expand functionality with '
-        'additional content.'
+        "Generate classes on {topic} that could be used to eventually expand functionality with "
+        "additional content."
     ),
-    tools=[web_site_search_tool],
+    tools=[web_site_scrape_tool],
     agent=web_developer,
     async_execution=False,
 )
 
-
 refactor_task = Task(
     description=(
-        """"
+        """
         Refactor Python code for {topic}.
         You are an expert Python programmer and code reviewer.
         Your task is to review the provided Python code and suggest improvements.
@@ -141,25 +133,26 @@ refactor_task = Task(
         - Recommending best practices that should be followed
         Provide your review in a clear, structured format with specific examples and explanations.
         Feel free to include code snippets to illustrate your points.
+        You have an option to scrape web pages related to Python code concepts, coding conventions
+        and design patterns in order to provide a detailed analysis of the code.        
         """
     ),
     expected_output=(
-        'Generate classes on {topic} that could be used to eventually expand functionality with '
-        'additional content.'
+        "Generate classes on {topic} that could be used to eventually expand functionality with "
+        "additional content."
     ),
-    tools=[web_site_search_tool],
+    tools=[web_site_scrape_tool],
     agent=web_developer,
     async_execution=False,
 )
-
 
 sw_tester_task = Task(
     description=(
         "Generate Python code for {topic}."
         "Focus on pytest unit and functional tests using Selenium."
     ),
-    expected_output='Generate pytest code regarding {topic}.',
-    tools=[web_site_search_tool],
+    expected_output="Generate pytest code regarding {topic}.",
+    tools=[web_site_scrape_tool],
     agent=sw_tester,
     async_execution=False,
 )
@@ -179,10 +172,13 @@ crew = Crew(
 
 result = crew.kickoff(
     inputs={
-        'topic': (
-            'Web application displaying daily, weekly or monthly historical data of '
-            'Raspberry Pi Zero W 1-wire temperature sensor'
+        "topic": (
+            "Web application based on modern, dynamic and user friendly design patterns"
+            " displaying daily, weekly, monthly or yearly historical data"
+            " collected using Raspberry Pi Zero W 1-wire temperature sensor"
+            " which are stored in Postgres database."
         )
     }
 )
+
 print(result)
