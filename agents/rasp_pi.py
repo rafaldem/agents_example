@@ -1,71 +1,33 @@
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import ScrapeWebsiteTool
-from langchain.memory import ConversationBufferMemory
-from langchain_community.cache import InMemoryCache
-from langchain_community.llms.openai import OpenAI
-from langchain_core.tools import ToolException
+from crewai_tools import SerperDevTool, SeleniumScrapingTool
 
+from langchain_openai import ChatOpenAI
 
-# Configuration constants
-
-CACHE = InMemoryCache()
-
-# Agent config
-# not default
-AGENT_MODEL_NAME = "gpt-4o"
-AGENT_TEMPERATURE = 0.3
-AGENT_MAX_TOKENS = 8192
-AGENT_STREAMING = True
-# default
-AGENT_TOP_P = 1.0
-AGENT_FREQUENCY_PENALTY = 0
-AGENT_PRESENCE_PENALTY = 0
-AGENT_N = 1
-AGENT_BEST_OF = 1
-AGENT_MAX_RETRIES = 2
-
-# Manager config
-# not default
-MANAGER_MODEL_NAME = "gpt-4o-2024-05-13"
-MANAGER_TEMPERATURE = 0.5
-MANAGER_MAX_TOKENS = 8192
-MANAGER_STREAMING = True
-# default
-MANAGER_TOP_P = 1.0
-MANAGER_FREQUENCY_PENALTY = 0
-MANAGER_PRESENCE_PENALTY = 0
-MANAGER_N = 1
-MANAGER_BEST_OF = 1
-MANAGER_MAX_RETRIES = 2
-
-
-# Handle errors during tool execution
-def handle_error(error: ToolException) -> str:
-    return (
-        "The following errors occurred during tool execution: "
-        + error.args[0]
-        + " Please try another tool."
-    )
+from setup import *
 
 
 # Create LLM agents
-agent_llm = OpenAI(
+agent_llm = ChatOpenAI(
     model_name=AGENT_MODEL_NAME,
     temperature=AGENT_TEMPERATURE,
-    max_tokens=AGENT_MAX_TOKENS,
     streaming=AGENT_STREAMING,
+    max_retries=AGENT_MAX_RETRIES,
 )
-manager_llm = OpenAI(
+manager_llm = ChatOpenAI(
     model_name=MANAGER_MODEL_NAME,
     temperature=MANAGER_TEMPERATURE,
-    max_tokens=MANAGER_MAX_TOKENS,
     streaming=MANAGER_STREAMING,
+    max_retries=MANAGER_MAX_RETRIES,
+)
+
+# Tools
+selenium_tool = SeleniumScrapingTool(
+    website_url=TOPIC_WEBPAGE_URL,
+    wait_time=SELENIUM_SCRAPER_WAIT_TIME,
 )
 
 
-# Tools and memory
-web_site_scrape_tool = ScrapeWebsiteTool()
-shared_memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+serper_search_tool = SerperDevTool()
 
 
 # Agents
@@ -74,19 +36,19 @@ hw_expert = Agent(
     role="Raspberry Pi Zero W hardware expert",
     goal=(
         "### Instruction ###\n"
-        "Scrape the web page and provide documentation details in {topic}\n"
+        "Search the web and provide documentation details in {topic}\n"
     ),
     verbose=True,
-    memory=True,
-    tools=[web_site_scrape_tool],
-    allow_delegation=False,
+    memory=False,
+    tools=[serper_search_tool],
+    allow_delegation=True,
     backstory=(
         "As an AI expert on the Raspberry Pi Zero W, recommend the best way to connect and configure multiple sensors"
         " (e.g., accelerometer, temperature, light) simultaneously.\n"
         "Include details on managing multiple I2C or SPI devices, power considerations,"
         " and any necessary software libraries.\n"
     ),
-    max_rpm=3
+    max_rpm=5,
 )
 
 web_developer = Agent(
@@ -97,9 +59,9 @@ web_developer = Agent(
         "Develop Python based web application regarding {topic}\n"
     ),
     verbose=True,
-    memory=True,
-    tools=[web_site_scrape_tool],
-    allow_delegation=False,
+    memory=False,
+    tools=[serper_search_tool],
+    allow_delegation=True,
     backstory=(
         "You are a highly capable Python developer assistant.\n"
         "Your role is to help me with any Python-related tasks, from coding to debugging to architectural design.\n"
@@ -119,8 +81,8 @@ refactor_expert = Agent(
     ),
     verbose=True,
     memory=False,
-    tools=[web_site_scrape_tool],
-    allow_delegation=False,
+    tools=[serper_search_tool],
+    allow_delegation=True,
     backstory=(
         "You are an AI-powered Python refactoring expert.\n"
         "Your task is to review my Python code and suggest improvements.\n"
@@ -143,8 +105,8 @@ sw_tester = Agent(
     ),
     verbose=True,
     memory=False,
-    tools=[web_site_scrape_tool],
-    allow_delegation=False,
+    tools=[serper_search_tool],
+    allow_delegation=True,
     backstory=(
         "You are an expert in software testing using pytest.\n"
         "I would like you to guide me through a test-driven development (TDD) workflow"
@@ -169,7 +131,7 @@ hw_expert_task = Task(
         "Provide hardware description of connecting external devices regarding {topic}.\n"
     ),
     expected_output="Short description of hardware connections.",
-    tools=[web_site_scrape_tool],
+    tools=[serper_search_tool],
     agent=hw_expert,
     async_execution=False,
 )
@@ -184,7 +146,7 @@ web_developer_task = Task(
         "Generate classes on {topic} that could be used to eventually expand functionality with "
         "additional content."
     ),
-    tools=[web_site_scrape_tool],
+    tools=[serper_search_tool],
     agent=web_developer,
     async_execution=False,
     context=[hw_expert_task],
@@ -212,7 +174,7 @@ refactor_task = Task(
         "Generate classes on {topic} that could be used to eventually expand functionality with "
         "additional content."
     ),
-    tools=[web_site_scrape_tool],
+    tools=[serper_search_tool],
     agent=web_developer,
     async_execution=False,
     context=[hw_expert_task, web_developer_task],
@@ -225,36 +187,27 @@ sw_tester_task = Task(
         "Focus on pytest unit and functional tests using Selenium.\n"
     ),
     expected_output="Generate pytest code regarding {topic}.",
-    tools=[web_site_scrape_tool],
+    tools=[serper_search_tool],
     agent=sw_tester,
     async_execution=False,
     context=[hw_expert_task, web_developer_task, refactor_task],
 )
 
-# Crew
 crew = Crew(
-    agents=[hw_expert, web_developer, sw_tester],
+    agents=[hw_expert, web_developer, refactor_expert, sw_tester],
     tasks=[hw_expert_task, web_developer_task, refactor_task, sw_tester_task],
     process=Process.sequential,
-    memory=True,
-    cache=True,
-    max_rpm=3,
+    memory=False,
+    cache=False,
+    max_rpm=5,
     share_crew=True,
     full_output=True,
     verbose=2,
     manager_llm=manager_llm,
+    output_file=r"output.txt",
 )
 
 # Execution
-result = crew.kickoff(
-    inputs={
-        "topic": (
-            "Web application based on modern, dynamic and user-friendly design patterns"
-            " displaying daily, weekly, monthly or yearly historical data"
-            " collected using Raspberry Pi Zero W 1-wire temperature sensor"
-            " which are stored in Postgres database."
-        )
-    }
-)
+result = crew.kickoff(inputs={"topic": TOPIC})
 
 print(result)
