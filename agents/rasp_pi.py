@@ -24,8 +24,8 @@ class LLMRunner:
             response = await self.async_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": self.user_prompt}],
-                temperature=0.7,
-                max_tokens=512,
+                temperature=0.2,
+                max_tokens=2048,
             )
             return response.choices[0].message.content
         except Exception as e:
