@@ -1,14 +1,25 @@
+import logging
 import asyncio
 
 from setup import *
 
 from together import AsyncTogether, Together
+from typing import List, Optional
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class LLMRunner:
     """Manages interaction with LLMs for both individual models and aggregators."""
 
-    def __init__(self, user_prompt, reference_models, aggregator_model, aggregator_prompt):
+    def __init__(
+            self,
+            user_prompt: str,
+            reference_models: List[str],
+            aggregator_model: str,
+            aggregator_prompt: str
+    ):
         self.user_prompt = user_prompt
         self.reference_models = reference_models
         self.aggregator_model = aggregator_model
@@ -18,26 +29,26 @@ class LLMRunner:
         self.client = Together()
         self.async_client = AsyncTogether()
 
-    async def run_single_model(self, model):
+    async def run_single_model(self, model: str) -> Optional[str]:
         """Run a single model asynchronously."""
         try:
             response = await self.async_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": self.user_prompt}],
-                temperature=0.2,
-                max_tokens=2048,
+                temperature=DEFAULT_TEMPERATURE,
+                max_tokens=DEFAULT_MAX_TOKENS,
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"Error with model {model}: {e}")
+            logger.error(f"Error with model {model}: {e}")
             return None
 
-    async def gather_responses(self):
+    async def gather_responses(self) -> List[Optional[str]]:
         """Run all reference models concurrently."""
         tasks = [self.run_single_model(model) for model in self.reference_models]
         return await asyncio.gather(*tasks, return_exceptions=True)
 
-    def run_aggregator(self, responses):
+    def run_aggregator(self, responses: List[str]) -> None:
         """Aggregate responses synchronously using the aggregator model."""
         try:
             final_stream = self.client.chat.completions.create(
@@ -49,11 +60,11 @@ class LLMRunner:
                 stream=True,
             )
             for chunk in final_stream:
-                print(chunk.choices[0].delta.content or "", end="", flush=True)
+                logger.info(chunk.choices[0].delta.content or "")
         except Exception as e:
-            print(f"Error with aggregator: {e}")
+            logger.error(f"Error with aggregator: {e}")
 
-    async def execute(self):
+    async def execute(self) -> None:
         """Main execution pipeline."""
         responses = await self.gather_responses()
         filtered_responses = [resp for resp in responses if resp is not None]
@@ -64,20 +75,10 @@ class LLMRunner:
 
 
 if __name__ == "__main__":
-    USER_PROMPT = TOPIC
-    REFERENCE_MODELS = [
-        "Qwen/Qwen2-72B-Instruct",
-        "Qwen/Qwen1.5-72B-Chat",
-        "mistralai/Mixtral-8x22B-Instruct-v0.1",
-        "databricks/dbrx-instruct",
-    ]
-    AGGREGATOR_MODEL = "mistralai/Mixtral-8x22B-Instruct-v0.1"
-    AGGREGATOR_PROMPT = """You have been provided with a set of responses from various open-source models...
-                           Your task is to synthesize these responses into a single, high-quality response."""
 
     # Execute
     runner = LLMRunner(
-        user_prompt=USER_PROMPT,
+        user_prompt=TOPIC,
         reference_models=REFERENCE_MODELS,
         aggregator_model=AGGREGATOR_MODEL,
         aggregator_prompt=AGGREGATOR_PROMPT,
